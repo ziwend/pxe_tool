@@ -1,0 +1,323 @@
+pxe工具使用说明
+
+#在/root 下创建目录.ssh（如果已经存在.ssh 目录，需要先删除.ssh 目录rm -rf /.ssh），并将生成/root/.ssh/id_rsa和/root/.ssh/id_rsa.pub
+ssh -keygen -t rsa -P ''
+cp /root/.ssh/id_rsa.pub /pxe_tool/html/
+
+
+=================ubuntu===================
+参考：https://ubuntu.com/server/docs/install/netboot-amd64
+
+#关闭ubuntu的防火墙
+ufw status
+ufw disable
+
+mkdir -p /home/iei/pxe_tool/ftpd/grub
+mkdir /home/iei/pxe_tool/html
+sftp上传对应的文件到相应文件夹
+sudo mv pxe_tool/ /
+
+第一台服务器手动安装，并将工具文件拷贝到其根目录
+mkdir -p /pxe_tool/html/ubuntu/autoinstall/
+cp /var/log/installer/autoinstall-user-data /pxe_tool/html/ubuntu/autoinstall/user-data
+
+mount -t iso9660 -o loop,ro ubuntu-23.04-live-server-amd64.iso /mnt
+mkdir /pxe_tool/ftpd/ubuntu-23.04
+cp /mnt/casper/{initrd,vmlinuz} /pxe_tool/ftpd/ubuntu-23.04
+
+#暂时未找到方法更改这两个文件{grubx64.efi grub.cfg}的位置，所以
+根据要安装的系统是22.04还是20.04 把grubx64.efi文件移动到tftp根目录，把grub.cfg移动到tftp的grub目录
+#grubx64.efi文件可能不区分是20或22，grub.cfg可以同时添加20和22，安装的时候选择，或提前设置默认值
+# 以下以22.04为例
+#检查grub配置
+mkdir /pxe_tool/ftpd/grub/
+cat > /pxe_tool/ftpd/grub/grub.cfg << 'EOF'
+set default="2"
+set timeout=10
+
+if loadfont unicode ; then
+  set gfxmode=auto
+  set locale_dir=$prefix/locale
+  set lang=en_US
+fi
+terminal_output gfxterm
+
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+if background_color 44,0,30; then
+  clear
+fi
+
+function gfxmode {
+        set gfxpayload="${1}"
+        if [ "${1}" = "keep" ]; then
+                set vt_handoff=vt.handoff=7
+        else
+                set vt_handoff=
+        fi
+}
+
+set linux_gfx_mode=keep
+
+export linux_gfx_mode
+
+menuentry "Try or Install Ubuntu Server 20.04" {
+        gfxmode $linux_gfx_mode
+        linux /grub/ubuntu-20.04/vmlinuz $vt_handoff ip=dhcp url=http://192.168.0.49/ubuntu/ubuntu-20.04.5-live-server-amd64.iso autoinstall ds=nocloud-net\;s=http://192.168.0.49/ubuntu/ ---
+        initrd /grub/ubuntu-20.04/initrd
+}
+menuentry 'Try or Install Ubuntu Server 22.04' {
+        gfxmode $linux_gfx_mode
+        linux /grub/ubuntu-22.04/vmlinuz $vt_handoff ip=dhcp url=http://192.168.0.49/ubuntu/ubuntu-22.04.2-live-server-amd64.iso autoinstall ds=nocloud-net\;s=http://192.168.0.49/ubuntu/ ---
+        #注意上面最后面有三个-
+        initrd /grub/ubuntu-22.04/initrd
+}
+
+menuentry "Try or Install Ubuntu Server 23.04" {
+        gfxmode $linux_gfx_mode
+        linux /grub/ubuntu-23.04/vmlinuz $vt_handoff ip=dhcp url=http://192.168.0.49/ubuntu/ubuntu-23.04-live-server-amd64.iso autoinstall ds=nocloud-net\;s=http://192.168.0.49/ubuntu/ ---
+        initrd /grub/ubuntu-23.04/initrd
+}
+EOF
+
+sed -i 's#iso/ubuntu-22.04.1-live-server-amd64.iso#ubuntu/ubuntu-22.04.2-live-server-amd64.iso#g' /pxe_tool/ftpd/ubuntu-22.04/grub.cfg
+#get ip
+ifconfig | grep 'inet '| cut -f 2 |cut -d " " -f 10
+SERVER_IP=10.49.1.20
+sed -i "s#192.168.0.49#$SERVER_IP#g" ftpd/grub/grub.cfg
+
+#直接复制(已验证grubx64.efi 20.04和22.04都可用)
+cp ftpd/ubuntu-22.04/grubx64.efi ftpd/  #(non-secureboot时不用复制)
+
+
+chmod +r ftpd/ubuntu-22.04/*
+
+#dnsmasq.conf修改（修改boot路径，ip range，interface等）
+#查看dnsmasq配置
+grep -Ev "^$|#" dnsmasq.conf
+
+sed -i 's/interface=enp97s0f0/interface=eth1/g' dnsmasq.conf
+sed -i 's/dhcp-range=10.49.1.150,10.49.1.155,255.255.255.0,12h/dhcp-range=192.168.0.50,192.168.0.150,255.255.255.0,12h/g' dnsmasq.conf
+sed -i 's/#dhcp-boot=pxelinux/pxelinux.0#dhcp-boot=ubuntu-22.04/bootx64.efi#g' dnsmasq.conf #
+#sed -i 's#tftp-root=/var/ftpd#tftp-root=/root/pxe_tool/ftpd#g' dnsmasq.conf
+
+#特殊情况：网络中已经有其他DHCP服务器了，并且我不希望我的DHCP干扰网络中其他的正常ip分配。所以我希望我的DHCP服务器只对某个固定的MAC地址分配ip，配置如下
+dhcp-range=192.168.0.2,static
+dhcp-host=00:15:5d:a9:8b:03,192.168.0.2
+
+chmod +x /pxe_tool/sbin/*
+
+
+根据需要修改dnsmasq_ubuntu.conf文件中的interface=eth1,lo
+
+ip a
+sed -i 's/interface=eth1/interface=ens29f0/g' conf/dnsmasq_ubuntu.conf
+
+lsof -i :53
+killall -KILL dnsmasq
+./sbin/dnsmasq -C conf/dnsmasq_ubuntu.conf
+
+
+sudo snap install autoinstall-generator
+/var/log/installer/autoinstall-user-data
+
+vi /pxe_tool/html/ubuntu/autoinstall/user-data
+
+cat > /pxe_tool/html/ubuntu/init.sh  << 'EOF'
+#!/bin/bash
+# add log
+cat << "EOF" >> /etc/profile
+#set user history
+USER=`whoami`
+USER_IP=`who -u am i 2>/dev/null| awk '{print $NF}'|sed -e 's/[()]//g'`
+if [ "$USER_IP" = "" ]; then
+    USER_IP=`hostname`
+fi
+if [ ! -d /var/log/history/${LOGNAME} ]; then
+    sudo mkdir -p /var/log/history/${LOGNAME}
+    sudo chown -R ${LOGNAME}:${LOGNAME} /var/log/history/${LOGNAME}
+    sudo chmod 300 /var/log/history/${LOGNAME}
+fi
+export HISTORY_FILE="/var/log/history/${LOGNAME}/bash_history"
+export PROMPT_COMMAND='{ msg=$(history 1 | { read x y; echo $y; });echo $(date +"%Y-%m-%d %H:%M:%S") [$USER@$LOGNAME@$USER_IP `pwd` ]" $msg" >> $HISTORY_FILE; }'
+EOF
+
+sed -i '$a\EOF' /pxe_tool/html/ubuntu/init.sh
+
+# 启动Nginx
+./sbin/nginx
+lsof -i :80
+
+
+调试：
+sudo tail -f /pxe_tool/logs/dnsmasq.log
+
+sudo tail -f /pxe_tool/logs/access.log
+sudo tail -f /pxe_tool/logs/error.log
+sudo tail -f /var/log/messages(centos)
+
+# 停止
+sudo ./sbin/nginx -s stop
+sudo killall -KILL dnsmasq
+
+=============================Debian===========================
+参考：https://wiki.debian.org/PXEBootInstall
+https://www.debian.org/releases/stable/example-preseed.txt
+
+wget https://deb.debian.org/debian/dists/bullseye/main/installer-amd64/current/images/netboot/netboot.tar.gz
+tar -zxvf netboot.tar.gz -C /pxe_tool/ftpd/
+cd /pxe_tool/ftpd
+ln -s debian-installer/amd64/grubx64.efi .
+#ln -s debian-installer/amd64/grub . 该步骤可以不做
+
+mv /pxe_tool/ftpd/debian-installer/amd64/grub/grub.cfg /pxe_tool/ftpd/debian-installer/amd64/grub/grub.cfg.bak
+vi /pxe_tool/ftpd/debian-installer/amd64/grub/grub.cfg
+set timeout=10
+menuentry 'Install' {
+set background_color=black
+linux    /debian-installer/amd64/linux vga=788 auto=true priority=critical debian-installer/allow_unauthenticated=true  interface=auto netcfg/dhcp_timeout=60 netcfg/choose_interface=auto url=http://192.168.0.49/debian/preseed.cfg --- quiet
+initrd   /debian-installer/amd64/initrd.gz
+}
+
+mkdir /pxe_tool/html/debian
+
+
+mount -t iso9660 -o loop,ro debian-11.6.0-amd64-DVD-1.iso /mnt
+cp -r /mnt/* /pxe_tool/html/debian/
+umount /mnt
+vi /pxe_tool/html/debian/preseed.cfg
+
+
+lsof -i :53
+killall -KILL dnsmasq
+./sbin/dnsmasq -C conf/dnsmasq_debian.conf
+
+=============================CentOS8===========================
+参考：https://docs.centos.org/en-US/8-docs/advanced-install/assembly_preparing-for-a-network-install/
+systemctl status firewalld
+systemctl stop firewalld
+systemctl disable firewalld
+
+mkdir /pxe_tool/html/centos8
+上传CentOS-8.5.2111-x86_64-dvd1.iso到目录/pxe_tool/html/centos8
+mount -t iso9660 -o loop,ro CentOS-8.5.2111-x86_64-dvd1.iso /mnt
+cp -r /mnt/. /pxe_tool/html/centos8
+umount /mnt
+
+cat /root/anaconda-ks.cfg >/pxe_tool/html/centos8/ks.cfg
+注意点1：network  --bootproto=dhcp --device=eth0 --onboot=yes --ipv6=auto --activate这里的device需要根据实际情况更改
+
+#这个包是centos7的
+rpm2cpio grub2-efi-x64-modules-2.02-0.86.el7.centos.noarch.rpm | cpio -dimv
+mkdir -p  /pxe_tool/ftpd/EFI/centos/x86_64-efi/
+cp ./usr/lib/grub/x86_64-efi/linuxefi.mod  /pxe_tool/ftpd/EFI/centos/x86_64-efi/
+
+rpm2cpio grub2-efi-x64-2.02-90.el8.x86_64.rpm | cpio -dimv
+mkdir -p /pxe_tool/ftpd/EFI/centos/
+cp boot/efi/EFI/centos/grubx64.efi /pxe_tool/ftpd/EFI/centos/
+
+cat > /pxe_tool/ftpd/EFI/centos/grub.cfg << EOF
+set default="1"
+set timeout=10
+menuentry 'CentOS 7' {
+  linuxefi EFI/centos/7/vmlinuz ip=dhcp inst.repo=http://192.168.0.49/centos7/ inst.ks=http://192.168.0.49/centos7/ks.cfg
+  initrdefi EFI/centos/7/initrd.img
+}
+
+menuentry 'CentOS 8' {
+  linuxefi EFI/centos/8/vmlinuz ip=dhcp inst.ks=http://192.168.0.49/centos8/ks.cfg inst.stage2=http://192.168.0.49/centos8/ 
+  initrdefi EFI/centos/8/initrd.img
+}
+EOF
+mkdir -p /pxe_tool/ftpd/EFI/centos/8
+cp /pxe_tool/html/centos8/images/pxeboot/{vmlinuz,initrd.img} /pxe_tool/ftpd/EFI/centos/8/
+chmod +r /pxe_tool/ftpd/EFI/centos/*
+chmod +x /pxe_tool/sbin/*
+lsof -i :53
+killall -KILL dnsmasq
+
+根据需要修改dnsmasq_centos.conf文件中的interface=eth1,lo
+ip a
+sed -i 's/interface=eth1/interface=ens29f0/g' conf/dnsmasq_centos.conf
+
+./sbin/dnsmasq -C conf/dnsmasq_centos.conf
+./sbin/nginx
+=============================CentOS7===========================
+参考：https://docs.centos.org/en-US/centos/install-guide/pxe-server/#sect-network-boot-setup-uefi
+
+systemctl status firewalld
+systemctl stop firewalld
+systemctl disable firewalld
+
+setenforce 0; sed -i 's#SELINUX=enforcing#SELINUX=disabled#g' /etc/selinux/config
+cat /etc/selinux/config
+
+
+mkdir /pxe_tool/html/centos7
+上传CentOS-7.9.2009-x86_64-DVD.iso文件至/pxe_tool/html/centos7
+mkdir /media/CentOS
+mount -t iso9660 -o loop,ro CentOS-7.9.2009-x86_64-DVD.iso /media/CentOS/
+cp -r /media/CentOS/. /pxe_tool/html/centos7
+#umount /media/CentOS
+
+cat /root/anaconda-ks.cfg >/pxe_tool/html/centos7/ks.cfg
+vi /pxe_tool/html/centos7/ks.cfg
+# Use network installation
+url --url="http://192.168.0.49/centos7"
+
+#决定是否在系统第一次引导时启动"设置代理".如果启用,firstboot软件包必须被安装.如果不指定,这个选项是缺省为禁用的
+firstboot --disable
+
+#指定时区
+timezone Asia/Shanghai --isUtc
+
+#删除系统分区,防止系统盘之前装过系统，初始化标签
+clearpart --all --initlabel
+
+reboot
+
+%packages
+%end
+
+cat > /pxe_tool/ftpd/EFI/centos/grub.cfg << EOF
+set default="0"
+set timeout=10
+menuentry 'CentOS 7' {
+  linuxefi EFI/centos/7/vmlinuz ip=dhcp inst.repo=http://192.168.0.49/centos7/ inst.ks=http://192.168.0.49/centos7/ks.cfg
+  initrdefi EFI/centos/7/initrd.img
+}
+
+menuentry 'CentOS 8' {
+  linuxefi EFI/centos/8/vmlinuz ip=dhcp inst.ks=http://192.168.0.49/centos8/ks.cfg inst.stage2=http://192.168.0.49/centos8/ 
+  initrdefi EFI/centos/8/initrd.img
+}
+EOF
+
+mkdir -p /pxe_tool/ftpd/EFI/centos/7
+# vmlinuz,initrd.img 这两个文件centos7和8不一样
+cp /pxe_tool/html/centos7/images/pxeboot/{vmlinuz,initrd.img} /pxe_tool/ftpd/EFI/centos/7
+chmod +r /pxe_tool/ftpd/EFI/centos/*
+
+#chmod +x sbin/dnsmasq
+#chmod +x sbin/nginx
+chmod +x sbin/*
+
+ip a
+sed -i 's/interface=eth1/interface=ens29f0/g' conf/dnsmasq_centos.conf
+
+lsof -i :53
+killall -KILL dnsmasq
+或pkill -9 dnsmasq
+./sbin/dnsmasq -C conf/dnsmasq_centos.conf
+
+# 启动Nginx
+./sbin/nginx
+lsof -i :80
+
+[root@localhost ~]# lsof -i :53
+-bash: lsof: command not found
+
+yum -y install lsof
+
+[root@localhost ~]# netstat -tunlp|grep 53
+-bash: netstat: command not found
