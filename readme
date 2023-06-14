@@ -1,7 +1,7 @@
 pxe工具使用说明
 
 #在/root 下创建目录.ssh（如果已经存在.ssh 目录，需要先删除.ssh 目录rm -rf /.ssh），并将生成/root/.ssh/id_rsa和/root/.ssh/id_rsa.pub
-ssh -keygen -t rsa -P ''
+ssh-keygen -t rsa -P ''
 cp /root/.ssh/id_rsa.pub /pxe_tool/html/
 
 
@@ -16,6 +16,7 @@ mkdir -p /home/iei/pxe_tool/ftpd/grub
 mkdir /home/iei/pxe_tool/html
 sftp上传对应的文件到相应文件夹
 sudo mv pxe_tool/ /
+
 
 第一台服务器手动安装，并将工具文件拷贝到其根目录
 mkdir -p /pxe_tool/html/ubuntu/autoinstall/
@@ -143,6 +144,10 @@ export PROMPT_COMMAND='{ msg=$(history 1 | { read x y; echo $y; });echo $(date +
 EOF
 
 sed -i '$a\EOF' /pxe_tool/html/ubuntu/init.sh
+
+chmod +x /pxe_tool/sbin/*
+lsof -i :53
+killall -KILL dnsmasq
 
 # 启动Nginx
 ./sbin/nginx

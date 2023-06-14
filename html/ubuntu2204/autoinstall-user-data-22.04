@@ -1,25 +1,20 @@
 #cloud-config
 autoinstall:
   apt:
+    disable_components: []
+    geoip: false
+    preserve_sources_list: false
     primary:
     - arches:
       - default
-      uri: https://mirrors.aliyun.com/ubuntu 
+      uri: https://mirrors.aliyun.com/ubuntu
   drivers:
     install: false
-  user-data:
-	timezone: Asia/Shanghai
-	disable_root: false
-	# openssl passwd -6 -salt 1234
-	# mkpasswd -m sha-512 2357#$abc
-	chpasswd:
-	  list: |
-		root: $6$rYriJfViezeJCJMG$dl4ID8ohDQGjMYToD.KJtzHA6MRE6ClwxT9ctFacWGkXvW/D/JIU6tBrez.NIv4mkF29rTEGT0VBuuiS4mAiG0
   identity:
     hostname: ubu
-    password: $6$SZmyCmnn4Qw4ZPhX$QMfg1pfKc9zeGockeF9iC5rQY/3GrfIs0/dPoQOf16KE7drmTvKGibJF41zXc63rwaxrF3M/OuMpK6b6SoAu9.
+    password: $6$LtfcK8Mk02tXBz6m$K5uY5RnRL9nV/1xmuvAj9ACENVzbRsZ2uNdTo8Av9dGtnuc4HqEdCZfbc8B.RBt2L6l30ia89rLMOkhLcWiLC.
     realname: ubuntu
-    username: iei
+    username: ro
   kernel:
     package: linux-generic
   keyboard:
@@ -29,18 +24,23 @@ autoinstall:
   locale: en_US.UTF-8
   network:
     ethernets:
-      eth0:
+      ens17f0:
+        dhcp4: true
+      ens17f1:
+        dhcp4: true
+      ens17f2:
+        dhcp4: true
+      ens17f3:
         dhcp4: true
     version: 2
   ssh:
     allow-pw: true
-    authorized-keys: [ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDb+o+6TAjhvFASzZfXNFPbi22c+QbQ36RextEm8QXuIHOs/0geYeNJ4IZNp8MiFXRA+DU59V1bgZms6/xJRx+LoULRkjw1lquO7Ue7yzRGWFAembRjUfp51rcbdADMA3cFe1s0wXA7gegCtPiV1nWAbXlxRhN3NGcelJRIlRL+/CiOrO2Wl+xpggLz8Bi/zPxO6E0vSEcwRAIAGkuAFO6wIf4MpuwOF6BLgUstqraJpLJxKwrEN/I2ezqM/DQ7/pHe+Qpv7GGa4sXEiJ6zQZlkqYUUltYCcdu6rRFhH/wpKBobaXOGryeNlGIm8LduQLtE9NdcRGKANEubXXGeQp4EtZxia5GII+QHFOYdfCEDmpiQFWcQAFobFh9FRTzeajGh4kSBJldfcitCXwY084Blq6Nnz2Z0n8XxKPhMaMq1ZEYlpfsYbygirAyEx1oN+69epCw7BnqwJBjaaWL0OJaavebge8YlHpQBeVwP5GVr7MR4QxHnLA8BupME/dLDt00= root@localhost.localdomain]
+    authorized-keys: []
     install-server: true
   storage:
-    grub:
-     recorder_uefi: False
     config:
     - ptable: gpt
+      serial: SAMSUNG_MZ7L3960HCJR-00B7C_S6KNNE0RB03933
       path: /dev/sda
       wipe: superblock
       preserve: false
@@ -77,7 +77,7 @@ autoinstall:
       type: format
       id: format-1
     - device: disk-sda
-      size: -1
+      size: 956919971840
       wipe: superblock
       flag: ''
       number: 3
@@ -93,7 +93,7 @@ autoinstall:
       id: lvm_volgroup-0
     - name: ubuntu-lv
       volgroup: lvm_volgroup-0
-      size: 100%
+      size: 956917874688B
       wipe: superblock
       preserve: false
       type: lvm_partition
@@ -115,12 +115,5 @@ autoinstall:
       device: format-0
       type: mount
       id: mount-0
-  #packages:
-  #- linux -generic -hwe -22.04
-  late-commands:
-  - wget -P /root/ http://192.168.0.49/ubuntu/init.sh
-  - bash /root/init.sh
-  - sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
   updates: security
   version: 1
-
