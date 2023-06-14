@@ -1,0 +1,134 @@
+#cloud-config
+autoinstall:
+  apt:
+    disable_components: []
+    geoip: false
+    preserve_sources_list: false
+    primary:
+    - arches:
+      - default
+      uri: https://mirrors.aliyun.com/ubuntu 
+  drivers:
+    install: false
+  user-data:
+    timezone: Asia/Shanghai
+  identity:
+    hostname: ubu
+    # password yw5q@2023
+    password: $6$SZmyCmnn4Qw4ZPhX$QMfg1pfKc9zeGockeF9iC5rQY/3GrfIs0/dPoQOf16KE7drmTvKGibJF41zXc63rwaxrF3M/OuMpK6b6SoAu9.
+    realname: ubuntu
+    username: iei
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  locale: en_US.UTF-8
+  network:
+    ethernets:
+      eth0:
+        dhcp4: true
+    version: 2
+  source:
+    id: ubuntu-server-minimal
+    search_drivers: false
+  ssh:
+    allow-pw: true
+    authorized-keys: [ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDb+o+6TAjhvFASzZfXNFPbi22c+QbQ36RextEm8QXuIHOs/0geYeNJ4IZNp8MiFXRA+DU59V1bgZms6/xJRx+LoULRkjw1lquO7Ue7yzRGWFAembRjUfp51rcbdADMA3cFe1s0wXA7gegCtPiV1nWAbXlxRhN3NGcelJRIlRL+/CiOrO2Wl+xpggLz8Bi/zPxO6E0vSEcwRAIAGkuAFO6wIf4MpuwOF6BLgUstqraJpLJxKwrEN/I2ezqM/DQ7/pHe+Qpv7GGa4sXEiJ6zQZlkqYUUltYCcdu6rRFhH/wpKBobaXOGryeNlGIm8LduQLtE9NdcRGKANEubXXGeQp4EtZxia5GII+QHFOYdfCEDmpiQFWcQAFobFh9FRTzeajGh4kSBJldfcitCXwY084Blq6Nnz2Z0n8XxKPhMaMq1ZEYlpfsYbygirAyEx1oN+69epCw7BnqwJBjaaWL0OJaavebge8YlHpQBeVwP5GVr7MR4QxHnLA8BupME/dLDt00= root@localhost.localdomain]
+    install-server: true
+  storage:
+    grub:
+     recorder_uefi: False
+    config:
+    - ptable: gpt
+      path: /dev/sda
+      wipe: superblock
+      preserve: false
+      name: ''
+      grub_device: false
+      type: disk
+      id: disk-sda
+    - device: disk-sda
+      size: 1073741824
+      wipe: superblock
+      flag: boot
+      number: 1
+      preserve: false
+      grub_device: true
+      offset: 1048576
+      path: /dev/sda1
+      type: partition
+      id: partition-0
+    - fstype: fat32
+      volume: partition-0
+      preserve: false
+      type: format
+      id: format-0
+    - device: disk-sda
+      size: 524288000
+      wipe: superblock
+      number: 2
+      preserve: false
+      grub_device: false
+      offset: 1074790400
+      path: /dev/sda2
+      type: partition
+      id: partition-1
+    - fstype: ext4
+      volume: partition-1
+      preserve: false
+      type: format
+      id: format-1
+    - device: disk-sda
+    # For the last partition specified for a particular device, you can specify the size as ¡°-1¡± to indicate that the partition should fill the remaining space.
+      size: -1
+      wipe: superblock
+      number: 3
+      preserve: false
+      grub_device: false
+      offset: 1599078400
+      path: /dev/sda3
+      type: partition
+      id: partition-2
+    - name: ubuntu-vg
+      devices:
+      - partition-2
+      preserve: false
+      type: lvm_volgroup
+      id: lvm_volgroup-0
+    - name: ubuntu-lv
+      volgroup: lvm_volgroup-0
+      size: 100%
+      wipe: superblock
+      preserve: false
+      path: /dev/ubuntu-vg/ubuntu-lv
+      type: lvm_partition
+      id: lvm_partition-0
+    - fstype: ext4
+      volume: lvm_partition-0
+      preserve: false
+      type: format
+      id: format-2
+    - path: /
+      device: format-2
+      type: mount
+      id: mount-2
+    - path: /boot
+      device: format-1
+      type: mount
+      id: mount-1
+    - path: /boot/efi
+      device: format-0
+      type: mount
+      id: mount-0
+  packages:
+  - linux-generic-hwe-22.04
+  late-commands:
+  - curtin in-target --target=/target -- wget -P /root/ http://192.168.0.49/ubuntu/init.sh
+  - curtin in-target --target=/target -- bash /root/init.sh
+  - curtin in-target --target=/target -- apt-get -y update
+  - curtin in-target --target=/target -- apt-get -y install net-tools python3-pip vim iputils-ping build-essential
+  updates: security
+  version: 1
+
